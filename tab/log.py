@@ -83,6 +83,45 @@ def _render_log_view_action(path: str) -> str:
     """.format(log_view_url=html.escape(build_log_view_url(path)))
 
 
+def _format_file_size(path: str) -> str:
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return "-"
+
+    units = ["B", "KB", "MB", "GB"]
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} {unit}"
+        value /= 1024
+    return f"{int(size)} B"
+
+
+def _read_log_preview(path: str, *, max_lines: int = 5, max_bytes: int = 8192) -> str:
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - max_bytes))
+            content = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return "无法读取日志预览。"
+
+    lines = [line.rstrip() for line in content.splitlines() if line.strip()]
+    if not lines:
+        return "日志文件为空。"
+    return "\n".join(lines[-max_lines:])
+
+
+def _render_log_preview(path: str) -> str:
+    return """
+    <div class="btb-log-preview" aria-label="日志预览">
+      <pre>{preview}</pre>
+    </div>
+    """.format(preview=html.escape(_read_log_preview(path)))
+
+
 def _list_log_files() -> list[str]:
     try:
         items = [
@@ -601,6 +640,7 @@ def log_tab():
                     created_at = datetime.fromtimestamp(
                         os.path.getmtime(log_file)
                     ).strftime("%Y-%m-%d %H:%M:%S")
+                    size_text = _format_file_size(log_file)
 
                     with gr.Column(elem_classes=f"btb-task-card {status_class}"):
                         gr.HTML(
@@ -609,14 +649,17 @@ def log_tab():
                               <div class="btb-task-card__title">{title}</div>
                               <span class="btb-task-status {status_class}">{status}</span>
                             </div>
-                            <div class="btb-task-card__meta">更新时间 {created_at}</div>
+                            <div class="btb-task-card__meta">更新时间 {created_at} · {size_text}</div>
                             {log_path}
+                            {preview}
                             """.format(
                                 title=html.escape(title),
                                 status=html.escape(status),
                                 status_class=html.escape(status_class),
                                 created_at=html.escape(created_at),
+                                size_text=html.escape(size_text),
                                 log_path=_render_log_path(log_file),
+                                preview=_render_log_preview(log_file),
                             )
                         )
                         gr.Button(

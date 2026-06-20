@@ -1112,6 +1112,60 @@ select,
   overflow-wrap: anywhere;
 }
 
+.btb-log-preview {
+  margin-top: 2px;
+  border: 1px solid rgba(80, 80, 80, 0.72);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 34px),
+    #0c0c0c !important;
+  color: #f2f2f2 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 18px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.btb-log-preview::before {
+  content: "日志预览";
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(80, 80, 80, 0.72);
+  background: #202020;
+  color: #d6d6d6;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.btb-log-preview pre {
+  margin: 0;
+  min-height: 7.5rem;
+  max-height: 7.5rem;
+  padding: 10px 12px;
+  overflow: auto;
+  color: #f2f2f2 !important;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 100%
+      24px,
+    #0c0c0c !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-color: #5c5c5c #161616;
+}
+
+.btb-log-preview pre,
+.btb-log-preview pre *,
+.gradio-container .btb-log-preview pre,
+.gradio-container .btb-log-preview code {
+  color: #f2f2f2 !important;
+  -webkit-text-fill-color: #f2f2f2 !important;
+}
+
 .btb-task-card__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
