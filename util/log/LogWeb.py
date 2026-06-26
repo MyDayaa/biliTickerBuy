@@ -103,9 +103,7 @@ def attach_log_routes(app) -> None:
     ) -> HTMLResponse:
         log_path = _resolve_log_path(raw_path=path, log_name=name)
         title = escape(log_path.name)
-        stream_url = (
-            f"{_LOG_STREAM_ROUTE}?name={quote(log_path.name, safe='')}"
-        )
+        stream_url = f"{_LOG_STREAM_ROUTE}?name={quote(log_path.name, safe='')}"
         chunk_url = f"{_LOG_CHUNK_ROUTE}?name={quote(log_path.name, safe='')}"
         initial_payload_json = json.dumps(
             _read_log_chunk_payload(log_path),
