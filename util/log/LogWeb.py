@@ -479,6 +479,14 @@ def attach_log_routes(app) -> None:
       }};
     }}
 
+    function textToLines(text) {{
+      if (!text) return [];
+      return text
+        .split("\\n")
+        .map((line) => line.replace(/\\r$/, ""))
+        .filter((line) => line.trim() !== "");
+    }}
+
     function normalizedResponseMessage(message) {{
       let value = message.trim();
       value = value.replace(/^\\[\\d+(?:-\\d+)?\\/\\d+\\]\\s*/, "");
@@ -636,7 +644,7 @@ def attach_log_routes(app) -> None:
         const response = await fetch(`${{chunkUrl}}&before=${{earliestOffset}}`);
         if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
         const payload = await response.json();
-        const olderLines = payload.text ? payload.text.split("\\n") : [];
+        const olderLines = textToLines(payload.text);
         earliestOffset = payload.start || 0;
         hasMoreHistory = Boolean(payload.has_more);
         if (olderLines.length > 0) {{
@@ -666,7 +674,7 @@ def attach_log_routes(app) -> None:
         const response = await fetch(chunkUrl);
         if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
         const payload = await response.json();
-        rawLines = payload.text ? payload.text.split("\\n") : [];
+        rawLines = textToLines(payload.text);
         earliestOffset = payload.start || 0;
         hasMoreHistory = Boolean(payload.has_more);
         historyExpanded = false;
@@ -709,7 +717,7 @@ def attach_log_routes(app) -> None:
       }});
     }}
     function appendText(text) {{
-      const lines = text ? text.split("\\n") : [];
+      const lines = textToLines(text);
       for (const line of lines) {{
         rawLines.push(line);
         appendRenderedLine(line);
@@ -786,7 +794,7 @@ def attach_log_routes(app) -> None:
       statusEl.textContent = "已连接，日志实时更新中";
     }});
     stream.addEventListener("reset", (event) => {{
-      rawLines = event.data ? event.data.split("\\n") : [];
+      rawLines = textToLines(event.data);
       earliestOffset = 0;
       hasMoreHistory = false;
       pruneRawLines();
@@ -798,7 +806,7 @@ def attach_log_routes(app) -> None:
     stream.onerror = () => {{
       statusEl.textContent = "连接中断，正在尝试重连...";
     }};
-    rawLines = initialPayload.text ? initialPayload.text.split("\\n") : [];
+    rawLines = textToLines(initialPayload.text);
     pruneRawLines();
     resetRenderedLines(rawLines);
     updateHistoryLoader();
