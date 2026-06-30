@@ -4,6 +4,7 @@ import datetime
 import math
 import time
 from collections.abc import Callable
+from typing import Any
 
 from cptoken import CTokenRuntimeState, sim_ctoken_state
 
@@ -16,7 +17,6 @@ from util.Constant import (
 )
 from util.notifer.Notifier import NotifierManager
 from util.proxy.ProxyBackoff import ProxyBackoff
-from util.TimeUtil import current_time_ms
 from util.request.BiliRequest import BiliRequest
 from util.request.TokenUtil import generate_token
 from util.ErrorCodes import ErrorCodes
@@ -34,6 +34,20 @@ def get_qrcode_url(_request, order_id) -> str:
 
 def get_order_detail_url(order_id: int | str) -> str:
     return f"{BASE_URL}/platform/orderDetail.html?order_id={order_id}"
+
+
+def build_payment_result(
+    _request: BiliRequest,
+    order_id: int | str,
+) -> dict[str, Any]:
+    order_detail_url = get_order_detail_url(order_id)
+    payment_code_url = get_qrcode_url(_request, order_id)
+    return {
+        "order_id": order_id,
+        "order_detail_url": order_detail_url,
+        "payment_code_url": payment_code_url,
+        "payment_qr_url": order_detail_url,
+    }
 
 
 def format_countdown(seconds: float) -> str:
@@ -64,7 +78,22 @@ def wait_until_start(time_start: str, warmup=None):
 
     timeoffset = time_service.get_timeoffset()
     yield {"message": "0) 等待开始时间"}
-    yield {"message": f"时间偏差已被设置为: {timeoffset}秒"}
+    yield {
+        "message": (
+            f"时间偏差已被设置为: {timeoffset}秒"
+            f"（时间源: {getattr(time_service, 'time_source', 'unknown')}）"
+        )
+    }
+    bili_check = time_service.compute_bili_time_check(attempts=2, timeout=1.5)
+    if bili_check is not None:
+        yield {
+            "message": (
+                "会员购Date校验: "
+                f"与当前时间源差异约{bili_check.offset_center - timeoffset:+.3f}秒，"
+                f"不确定度约±{bili_check.uncertainty_seconds:.3f}秒，"
+                f"RTT {bili_check.delay * 1000:.1f}ms"
+            )
+        }
 
     for fmt in (
         "%Y-%m-%dT%H:%M:%S",
@@ -84,7 +113,7 @@ def wait_until_start(time_start: str, warmup=None):
 
     yield {"message": f"计划抢票开始时间: {target_time.strftime('%Y-%m-%d %H:%M:%S')}"}
 
-    time_difference = target_time.timestamp() - time.time() + timeoffset
+    time_difference = target_time.timestamp() - time_service.now()
     end_time = time.perf_counter() + time_difference
     next_report_at = float("inf")
     warmed = False
@@ -322,7 +351,7 @@ def prepare_create_request(
     payload = dict(tickets_info)
     payload["again"] = 1
     payload["token"] = order_token
-    now_ms = current_time_ms()
+    now_ms = time_service.current_time_ms()
     payload["timestamp"] = now_ms
     payload["newRisk"] = True
     payload["requestSource"] = "neul-next"
