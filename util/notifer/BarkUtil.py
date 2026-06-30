@@ -28,4 +28,5 @@ class BarkNotifier(NotifierBase):
         else:
             url = f"https://api.day.app/{self.token}/{title}/{message}"
 
-        requests.post(url, headers=headers, data=json.dumps(data))
+        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=10)
+        response.raise_for_status()

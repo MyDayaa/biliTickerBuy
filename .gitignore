@@ -10,6 +10,8 @@ build
 *.pyc
 *.log
 *.json
+cookies.json.bak
+logs/
 !assets/fail_messages.json
 tmp/*
 tmp

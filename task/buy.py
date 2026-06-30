@@ -804,45 +804,51 @@ def buy_stream(config: BuyConfig):
 
                 notifierManager.start_all()
 
-                yield emit(
-                    "stage",
-                    "抢票成功，弹出付款二维码",
-                    BuyStreamUpdate(
-                        stage="抢票成功",
+                try:
+                    yield emit(
+                        "stage",
+                        "抢票成功，弹出付款二维码",
+                        BuyStreamUpdate(
+                            stage="抢票成功",
+                            status="succeeded",
+                        ),
+                    )
+                    order_id = request_result["data"]["orderId"]  # type: ignore
+                    payment_result = build_payment_result(_request, order_id)
+                    for payment_event in emit_payment_details(
+                        payment_result,
                         status="succeeded",
-                    ),
-                )
-                order_id = request_result["data"]["orderId"]  # type: ignore
-                payment_result = build_payment_result(_request, order_id)
-                for payment_event in emit_payment_details(
-                    payment_result,
-                    status="succeeded",
-                ):
-                    yield payment_event
-                if config.auto_open_payment_url:
-                    try:
-                        webbrowser.open(payment_result["order_detail_url"])
-                        yield emit(
-                            "status",
-                            "已自动打开支付链接",
-                            BuyStreamUpdate(
-                                order_id=payment_result.get("order_id"),
-                                order_detail_url=payment_result.get("order_detail_url"),
-                                payment_code_url=payment_result.get("payment_code_url"),
-                                payment_qr_url=payment_result.get("payment_qr_url"),
-                                status="succeeded",
-                            ),
-                        )
-                    except Exception as exc:
-                        yield emit("status", f"自动打开支付链接失败: {exc}")
-                if config.show_qrcode and payment_result.get("payment_code_url"):
-                    qr_gen = qrcode.QRCode()
-                    qr_gen.add_data(payment_result["payment_code_url"])
-                    qr_gen.make(fit=True)
-                    qr_gen_image = qr_gen.make_image()
-                    qr_gen_image.show()  # type: ignore
-                # 让 Server酱/Bark/PushPlus 等渠道的 HTTP 请求有时间发完，否则会被掐断。
-                notifierManager.join_all(timeout=15)
+                    ):
+                        yield payment_event
+                    if config.auto_open_payment_url:
+                        try:
+                            webbrowser.open(payment_result["order_detail_url"])
+                            yield emit(
+                                "status",
+                                "已自动打开支付链接",
+                                BuyStreamUpdate(
+                                    order_id=payment_result.get("order_id"),
+                                    order_detail_url=payment_result.get(
+                                        "order_detail_url"
+                                    ),
+                                    payment_code_url=payment_result.get(
+                                        "payment_code_url"
+                                    ),
+                                    payment_qr_url=payment_result.get("payment_qr_url"),
+                                    status="succeeded",
+                                ),
+                            )
+                        except Exception as exc:
+                            yield emit("status", f"自动打开支付链接失败: {exc}")
+                    if config.show_qrcode and payment_result.get("payment_code_url"):
+                        qr_gen = qrcode.QRCode()
+                        qr_gen.add_data(payment_result["payment_code_url"])
+                        qr_gen.make(fit=True)
+                        qr_gen_image = qr_gen.make_image()
+                        qr_gen_image.show()  # type: ignore
+                finally:
+                    # 让 Server酱/Bark/PushPlus 等渠道的 HTTP 请求有时间发完，否则会被掐断。
+                    notifierManager.join_all(timeout=15)
                 break
         except (HTTPError, RequestException) as e:
             logger.exception(e)

@@ -1,4 +1,3 @@
-import json
 import requests
 
 from util.notifer.Notifier import NotifierBase
@@ -10,8 +9,12 @@ class PushPlusNotifier(NotifierBase):
         self.token = token
 
     def send_message(self, title, message):
-        url = "http://www.pushplus.plus/send"
-        headers = {"Content-Type": "application/json"}
+        url = "https://www.pushplus.plus/send"
 
         data = {"token": self.token, "content": message, "title": title}
-        requests.post(url, headers=headers, data=json.dumps(data))
+        response = requests.post(url, json=data, timeout=10)
+        response.raise_for_status()
+
+        payload = response.json()
+        if payload.get("code") != 200:
+            raise RuntimeError(f"PushPlus推送失败: {payload.get('msg') or payload}")
