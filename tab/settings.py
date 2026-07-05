@@ -33,6 +33,8 @@ ticket_str_list: List[str] = []
 sales_dates: list[str] = []
 project_id = 0
 is_hot_project = False
+ticket_context_account_uid: str | None = None
+ticket_context_invalidated = False
 
 
 def _format_account_choice(uid: str, name: str, level: int) -> str:
@@ -218,6 +220,41 @@ def _has_invalid_index(indices: list[int], values: list[Any]) -> bool:
     )
 
 
+def _get_active_account_uid() -> str | None:
+    try:
+        cookie_manager = util.main_request.cookieManager
+        if not cookie_manager.have_cookies():
+            return None
+        uid = cookie_manager.get_cookies_value("DedeUserID")
+    except Exception:
+        return None
+    return str(uid) if uid else None
+
+
+def _reset_ticket_context(*, invalidated: bool = False) -> None:
+    global buyer_value
+    global addr_value
+    global ticket_value
+    global project_name
+    global ticket_str_list
+    global sales_dates
+    global project_id
+    global is_hot_project
+    global ticket_context_account_uid
+    global ticket_context_invalidated
+
+    buyer_value = []
+    addr_value = []
+    ticket_value = []
+    project_name = ""
+    ticket_str_list = []
+    sales_dates = []
+    project_id = 0
+    is_hot_project = False
+    ticket_context_account_uid = None
+    ticket_context_invalidated = invalidated
+
+
 def _format_ticket_option(screen_name: str, ticket: dict, ticket_price: int) -> str:
     ticket_desc = ticket.get("desc", "")
     sale_start = str(ticket.get("sale_start", "未知"))
@@ -269,6 +306,7 @@ def on_submit_ticket_id(num):
     global sales_dates
     global project_id
     global is_hot_project
+    global ticket_context_account_uid
 
     def _raise_login_error(exc: Exception) -> None:
         message = str(exc).strip()
@@ -278,9 +316,7 @@ def on_submit_ticket_id(num):
             ) from exc
 
     try:
-        buyer_value = []
-        addr_value = []
-        ticket_value = []
+        _reset_ticket_context()
         _, num, extracted_id_message = _resolve_project_input(num)
 
         try:
@@ -369,6 +405,7 @@ def on_submit_ticket_id(num):
             raise
 
         buyer_value = buyer_json["data"]["list"]
+        ticket_context_account_uid = _get_active_account_uid()
         buyer_str_list = [
             f"{item['name']}-{item['personal_id']}" for item in buyer_value
         ]
@@ -433,6 +470,13 @@ def on_submit_all(
     address_index,
 ):
     try:
+        if ticket_context_invalidated:
+            raise gr.Error("当前账号已切换，请重新获取票务信息后再生成配置。")
+        if (
+            ticket_context_account_uid is not None
+            and ticket_context_account_uid != _get_active_account_uid()
+        ):
+            raise gr.Error("当前账号已切换，请重新获取票务信息后再生成配置。")
         if ticket_id is None:
             raise gr.Error("请输入正确的活动链接。")
         if not isinstance(people_indices, list) or len(people_indices) == 0:
@@ -532,6 +576,7 @@ def upload_file(filepath):
         account = util.main_request.cookieManager.add_account(cookies)
         set_main_request(BiliRequest(cookies_config_path=GLOBAL_COOKIE_PATH))
         util.main_request.cookieManager.db.insert("cookie", account.cookies)
+        _reset_ticket_context(invalidated=True)
         gr.Info(f"已导入账号 {account.name}", duration=5)
 
         new_choices = [
@@ -550,7 +595,7 @@ def upload_file(filepath):
         raise gr.Error("登录信息导入失败，请检查文件格式。")
 
 
-def login_tab():
+def login_tab(account_change_state=None):
     with gr.Column(elem_classes="btb-page-section"):
         with gr.Accordion(
             label="填写当前账号绑定的手机号（可选）",
@@ -657,12 +702,24 @@ def login_tab():
         def _activate_account(account) -> None:
             set_main_request(BiliRequest(cookies_config_path=GLOBAL_COOKIE_PATH))
             util.main_request.cookieManager.db.insert("cookie", account.cookies)
+            _reset_ticket_context(invalidated=True)
             name = util.main_request.get_request_name()
             if name == "未登录":
                 gr.Warning(
                     f"账号 {account.name} 的 cookies 可能已过期，请重新扫码登录",
                     duration=5,
                 )
+
+        def _account_change_signal():
+            return str(time.time())
+
+        def _with_account_change(values, changed: bool):
+            if account_change_state is None:
+                return values
+            return [
+                *values,
+                _account_change_signal() if changed else gr.update(),
+            ]
 
         with gr.Row(elem_classes="btb-split-grid !items-stretch"):
             with gr.Column(elem_classes="btb-subcard", scale=4):
@@ -729,13 +786,16 @@ def login_tab():
 
         def on_check_login(key):
             if not key:
-                return [
-                    gr.update(),
-                    gr.update(),
-                    gr.update(),
-                    gr.update(),
-                    gr.update(),
-                ]
+                return _with_account_change(
+                    [
+                        gr.update(),
+                        gr.update(),
+                        gr.update(),
+                        gr.update(),
+                        gr.update(),
+                    ],
+                    changed=False,
+                )
             msg, cookies = poll_login(key)
             if cookies:
                 try:
@@ -743,49 +803,61 @@ def login_tab():
                     _activate_account(account)
                     gr.Info(f"已添加并切换至账号 {account.name}", duration=5)
                     new_choices = _get_account_choices()
-                    return [
-                        gr.update(value=GLOBAL_COOKIE_PATH),
-                        gr.update(visible=False),
-                        gr.update(visible=False),
-                        gr.update(
-                            choices=new_choices,
-                            value=_get_default_account_choice_from(new_choices),
-                        ),
-                        gr.update(value=""),
-                    ]
+                    return _with_account_change(
+                        [
+                            gr.update(value=GLOBAL_COOKIE_PATH),
+                            gr.update(visible=False),
+                            gr.update(visible=False),
+                            gr.update(
+                                choices=new_choices,
+                                value=_get_default_account_choice_from(new_choices),
+                            ),
+                            gr.update(value=""),
+                        ],
+                        changed=True,
+                    )
                 except Exception as exc:
                     logger.exception(exc)
                     gr.Warning(f"添加账号失败: {exc}", duration=5)
 
             gr.Warning(msg, duration=5)
-            return [
-                gr.update(),
-                gr.update(),
-                gr.update(),
-                gr.update(),
-                gr.update(),
-            ]
+            return _with_account_change(
+                [
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),
+                ],
+                changed=False,
+            )
 
         def on_dropdown_change(choice):
             uid = _find_uid_from_choice(choice)
             if not uid:
-                return [gr.update(), gr.update()]
+                return _with_account_change([gr.update(), gr.update()], changed=False)
             account = util.main_request.cookieManager.find_by_uid(uid)
             if account is None:
                 gr.Warning(f"未找到账号 {uid}", duration=5)
-                return [gr.update(), gr.update()]
+                return _with_account_change([gr.update(), gr.update()], changed=False)
             _activate_account(account)
             gr.Info(f"已切换到账号 {account.name}", duration=5)
-            return [
-                gr.update(value=GLOBAL_COOKIE_PATH),
-                gr.update(),
-            ]
+            return _with_account_change(
+                [
+                    gr.update(value=GLOBAL_COOKIE_PATH),
+                    gr.update(),
+                ],
+                changed=True,
+            )
 
         def on_delete_account(choice):
             uid = _find_uid_from_choice(choice)
             if not uid:
                 gr.Warning("请先选择一个账号", duration=5)
-                return [gr.update(), gr.update(), gr.update()]
+                return _with_account_change(
+                    [gr.update(), gr.update(), gr.update()],
+                    changed=False,
+                )
             account = util.main_request.cookieManager.find_by_uid(uid)
             util.main_request.cookieManager.remove_account(uid)
             new_choices = _get_account_choices()
@@ -802,33 +874,47 @@ def login_tab():
                     f"已删除账号 {account.name if account else uid}，自动切换到 {first_account.name}",
                     duration=5,
                 )
-                return [
-                    gr.update(value=GLOBAL_COOKIE_PATH),
-                    gr.update(choices=new_choices, value=new_choices[0]),
-                    gr.update(),
-                ]
+                return _with_account_change(
+                    [
+                        gr.update(value=GLOBAL_COOKIE_PATH),
+                        gr.update(choices=new_choices, value=new_choices[0]),
+                        gr.update(),
+                    ],
+                    changed=True,
+                )
             if was_active:
                 set_main_request(BiliRequest(cookies_config_path=GLOBAL_COOKIE_PATH))
                 util.main_request.cookieManager.db.delete("cookie")
+                _reset_ticket_context(invalidated=True)
                 gr.Info(
                     f"已删除最后一个账号 {account.name if account else uid}，当前无活跃账号",
                     duration=5,
                 )
-                return [
-                    gr.update(value=GLOBAL_COOKIE_PATH),
-                    gr.update(choices=new_choices, value=None),
-                    gr.update(),
-                ]
+                return _with_account_change(
+                    [
+                        gr.update(value=GLOBAL_COOKIE_PATH),
+                        gr.update(choices=new_choices, value=None),
+                        gr.update(),
+                    ],
+                    changed=True,
+                )
 
             gr.Info(f"已删除账号 {account.name if account else uid}", duration=5)
-            return [
-                gr.update(),
-                gr.update(
-                    choices=new_choices,
-                    value=_get_default_account_choice_from(new_choices),
-                ),
-                gr.update(),
-            ]
+            return _with_account_change(
+                [
+                    gr.update(),
+                    gr.update(
+                        choices=new_choices,
+                        value=_get_default_account_choice_from(new_choices),
+                    ),
+                    gr.update(),
+                ],
+                changed=False,
+            )
+
+        def on_upload_file(filepath):
+            for updates in upload_file(filepath):
+                yield _with_account_change(updates, changed=True)
 
         login_btn.click(on_login_click, outputs=[qr_img, qrcode_key_state])
 
@@ -845,23 +931,41 @@ def login_tab():
                 check_btn,
                 account_dropdown,
                 qrcode_key_state,
+                *([account_change_state] if account_change_state is not None else []),
             ],
         )
         account_dropdown.change(
             on_dropdown_change,
             inputs=[account_dropdown],
-            outputs=[gr_file_ui, account_dropdown],
+            outputs=[
+                gr_file_ui,
+                account_dropdown,
+                *([account_change_state] if account_change_state is not None else []),
+            ],
         )
         delete_btn.click(
             on_delete_account,
             inputs=[account_dropdown],
-            outputs=[gr_file_ui, account_dropdown, qr_img],
+            outputs=[
+                gr_file_ui,
+                account_dropdown,
+                qr_img,
+                *([account_change_state] if account_change_state is not None else []),
+            ],
         )
-        upload_ui.upload(upload_file, [upload_ui], [gr_file_ui, account_dropdown])
+        upload_ui.upload(
+            on_upload_file,
+            [upload_ui],
+            [
+                gr_file_ui,
+                account_dropdown,
+                *([account_change_state] if account_change_state is not None else []),
+            ],
+        )
     return load_login_accounts, [account_dropdown]
 
 
-def setting_tab():
+def setting_tab(account_change_state=None):
     with gr.Column(elem_classes="btb-page-section"):
         with gr.Column(elem_classes="btb-card btb-card-sky btb-layout-card"):
             gr.HTML(
@@ -959,6 +1063,39 @@ def setting_tab():
                         address_ui,
                     ],
                     outputs=[config_output_ui, config_file_ui],
+                )
+
+            def reset_setting_tab_after_account_change():
+                return [
+                    gr.update(choices=[], value=None),
+                    gr.update(choices=[], value=[]),
+                    gr.update(choices=[], value=None),
+                    gr.update(visible=False),
+                    gr.update(value="", visible=False),
+                    gr.update(choices=[], visible=False, value=None),
+                    gr.update(value=ConfigDB.get("people_buyer_name") or ""),
+                    gr.update(value=ConfigDB.get("people_buyer_phone") or ""),
+                    gr.update(value=None, visible=False),
+                    gr.update(value=None, visible=False),
+                ]
+
+            if account_change_state is not None:
+                account_change_state.change(
+                    fn=reset_setting_tab_after_account_change,
+                    inputs=None,
+                    outputs=[
+                        ticket_info_ui,
+                        people_ui,
+                        address_ui,
+                        inner,
+                        info_ui,
+                        date_ui,
+                        people_buyer_name,
+                        people_buyer_phone,
+                        config_output_ui,
+                        config_file_ui,
+                    ],
+                    show_progress="hidden",
                 )
 
             ticket_id_btn.click(

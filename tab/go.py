@@ -3,7 +3,6 @@ import html
 import json
 import os
 import threading
-import time
 import uuid
 
 import gradio as gr
@@ -11,7 +10,12 @@ from gradio import SelectData
 from loguru import logger
 
 from app_cmd.config.BuyConfig import BuyConfig
-from tab.log import refresh_task_panel, render_task_manager_panel, visible_task_entries
+from tab.log import (
+    refresh_task_panel,
+    render_task_manager_panel,
+    stop_all_running_tasks,
+    visible_task_entries,
+)
 from task.buy import buy_new_terminal
 from util import (
     ConfigDB,
@@ -28,6 +32,7 @@ from util.Constant import (
     DEFAULT_REQUEST_INTERVAL,
     GO_UPLOADED_FILES_STATE_KEY,
 )
+from util.proxy.ProxyManager import ProxyManager
 
 
 def withTimeString(string):
@@ -43,6 +48,16 @@ def _build_task_log_path(filename: str) -> str:
     )
     safe_name = safe_name.strip("._") or "task"
     return os.path.join(LOG_DIR, f"{safe_name}_{uuid.uuid4().hex[:8]}.log")
+
+
+def _build_task_proxy_list(
+    proxy_string: str | None, *, include_direct: bool
+) -> list[str]:
+    proxies = ProxyManager.parse_proxy_list(proxy_string)
+    proxies = [proxy for proxy in proxies if proxy.lower() != "none"]
+    if include_direct:
+        return ["none", *proxies]
+    return proxies
 
 
 def _parse_sale_start(value) -> datetime.datetime | None:
@@ -307,7 +322,14 @@ def go_start_tab():
         ConfigDB.insert("requestInterval", interval)
 
         https_proxys = ConfigDB.get("https_proxy") or ""
-        https_proxy_list = ["none"] + https_proxys.split(",")
+        include_direct_proxy = ConfigDB.get_as_bool("proxyIncludeDirect", True)
+        https_proxy_list = _build_task_proxy_list(
+            https_proxys,
+            include_direct=include_direct_proxy,
+        )
+        if not https_proxy_list:
+            gr.Warning("已关闭直连，请至少配置一个代理。")
+            return gr.update(visible=False)
         assigned_proxies: list[list[str]] = []
         assigned_proxies_next_idx = 0
         # 从配置文件加载
@@ -318,6 +340,8 @@ def go_start_tab():
         proxy_assignment_strategy = str(
             ConfigDB.get("proxyAssignmentStrategy") or "balanced"
         ).lower()
+        if proxy_assignment_strategy not in {"balanced", "queue", "local_fanout"}:
+            proxy_assignment_strategy = "balanced"
         queue_concurrency_limit = ConfigDB.get_as_int("queueConcurrencyLimit", 0)
         log_retention_days = buy_config.log_retention_days
         auto_cleanup_logs = ConfigDB.get("autoCleanupLogs")
@@ -368,6 +392,24 @@ def go_start_tab():
             gr.Info("抢票任务已按队列模式启动。")
             return gr.update(visible=True)
 
+        if proxy_assignment_strategy == "local_fanout":
+            fanout_proxy_pool = ",".join(
+                proxy for proxy in https_proxy_list if proxy.lower() != "none"
+            )
+            if not fanout_proxy_pool:
+                gr.Warning("代理池并发策略需要至少配置一个代理。")
+                return gr.update(visible=False)
+            for filename in files:
+                launch_task(
+                    filename,
+                    config=buy_config.with_overrides(
+                        https_proxys=fanout_proxy_pool,
+                        create_request_proxy_strategy="local_fanout",
+                    ),
+                )
+            gr.Info("抢票任务已按代理池并发策略启动。")
+            return gr.update(visible=True)
+
         for idx, filename in enumerate(files):
             if assigned_proxies == []:
                 left_task_num = len(files) - idx
@@ -409,10 +451,20 @@ def go_start_tab():
     )
     upload_ui.select(file_select_handler, upload_ui, ticket_ui)
 
-    go_btn = gr.Button(
-        "开始抢票",
-        elem_classes="btb-strong-button",
-    )
+    with gr.Row(elem_classes="btb-inline-actions !justify-end"):
+        stop_all_btn = gr.Button(
+            "一键终止",
+            variant="stop",
+            elem_classes="btb-soft-button btb-stop-all-button",
+            scale=0,
+            min_width=120,
+        )
+        go_btn = gr.Button(
+            "开始抢票",
+            elem_classes="btb-strong-button",
+            scale=0,
+            min_width=140,
+        )
     with gr.Column(
         visible=bool(visible_task_entries()),
         elem_classes="btb-card btb-card-sky btb-layout-card",
@@ -470,6 +522,11 @@ def go_start_tab():
         outputs=task_panel,
     ).then(
         fn=refresh_task_panel,
+        inputs=None,
+        outputs=[task_refresh_token, task_panel],
+    )
+    stop_all_btn.click(
+        fn=stop_all_running_tasks,
         inputs=None,
         outputs=[task_refresh_token, task_panel],
     )

@@ -173,11 +173,14 @@ def ticker_cmd(args: TickerCliArgs):
         """
         with gr.Column(elem_classes="btb-app-shell"):
             header_ui = gr.HTML(header, visible=not hide_header)
+            account_change_state = gr.State("")
             with gr.Tabs(elem_id="btb-main-tabs", elem_classes="btb-top-tabs"):
                 with gr.Tab("账号登录", id="login", elem_id="btb-tab-login"):
-                    load_login_tab, login_tab_load_outputs = login_tab()
+                    load_login_tab, login_tab_load_outputs = login_tab(
+                        account_change_state
+                    )
                 with gr.Tab("生成配置", id="config", elem_id="btb-tab-config"):
-                    setting_tab()
+                    setting_tab(account_change_state)
                 with gr.Tab("操作抢票", id="go", elem_id="btb-tab-go"):
                     (
                         go_task_refresh_token,

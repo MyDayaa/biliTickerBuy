@@ -128,13 +128,9 @@ def _extract_proxy_parts(
             if username:
                 return proxy_parts
             username = (
-                _get_any_key(item, "username", "user", "account", "authkey")
-                or ""
+                _get_any_key(item, "username", "user", "account", "authkey") or ""
             )
-            password = (
-                _get_any_key(item, "password", "pass", "pwd", "authpwd")
-                or ""
-            )
+            password = _get_any_key(item, "password", "pass", "pwd", "authpwd") or ""
             scheme = _normalize_proxy_scheme(
                 _get_any_key(item, "protocol", "scheme", "type") or scheme,
                 protocol,
@@ -151,13 +147,9 @@ def _extract_proxy_parts(
         port = _get_any_key(item, "port")
         if host and port:
             username = (
-                _get_any_key(item, "username", "user", "account", "authkey")
-                or ""
+                _get_any_key(item, "username", "user", "account", "authkey") or ""
             )
-            password = (
-                _get_any_key(item, "password", "pass", "pwd", "authpwd")
-                or ""
-            )
+            password = _get_any_key(item, "password", "pass", "pwd", "authpwd") or ""
             scheme = _normalize_proxy_scheme(
                 _get_any_key(item, "protocol", "scheme", "type"),
                 protocol,

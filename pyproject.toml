@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bilitickerbuy"
-version = "2.15.15"
+version = "2.15.16"
 description = "开源的 B 站会员购辅助工具，提供命令行和 Gradio 界面"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,6 +41,7 @@ dependencies = [
     "rich>=15.0.0",
     "tyro>=0.9.28",
     "gradio>=6.19.0",
+    "cryptography~=48.0.0",
 ]
 
 [project.urls]

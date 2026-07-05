@@ -242,6 +242,17 @@ class TimeUtil:
         """Return calibrated reference wall time in seconds."""
         return time.time() - self.timeoffset
 
+    def countdown_now(self) -> float:
+        """Return the default wall time used for ticket countdowns."""
+        if self.last_bili_check is not None:
+            return time.time() - self.last_bili_check.offset_center
+        return self.now()
+
+    def countdown_time_source(self) -> str:
+        if self.last_bili_check is not None:
+            return "bili-date"
+        return self.time_source
+
     def current_time_ms(self) -> int:
         """Return calibrated reference wall time in milliseconds."""
         return current_time_ms(timeoffset=self.timeoffset)

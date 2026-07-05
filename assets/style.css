@@ -922,6 +922,30 @@ select,
   box-shadow: var(--shadow-subtle) !important;
 }
 
+.btb-stop-all-button {
+  background: color-mix(
+    in srgb,
+    var(--semantic-error-bg) 72%,
+    var(--bg-surface)
+  ) !important;
+  color: var(--semantic-error-text) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--semantic-error-ring) 72%,
+    var(--border-default)
+  ) !important;
+  box-shadow: var(--shadow-subtle) !important;
+}
+
+.btb-stop-all-button:hover {
+  background: color-mix(
+    in srgb,
+    var(--semantic-error-bg) 88%,
+    var(--bg-surface)
+  ) !important;
+  border-color: var(--semantic-error-ring) !important;
+}
+
 /* ---------- Badges ---------- */
 
 .btb-badge-pink,

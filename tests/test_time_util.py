@@ -5,7 +5,7 @@ import importlib
 
 import pytest
 
-from util.TimeUtil import TimeUtil, current_time_ms
+from util.TimeUtil import BiliTimeCheck, TimeUtil, current_time_ms
 
 
 time_util_module = importlib.import_module("util.TimeUtil")
@@ -25,6 +25,22 @@ def test_time_service_now_uses_calibrated_reference_time(monkeypatch):
     assert service.current_time_ms() == 100_250
 
 
+def test_countdown_now_prefers_bili_date_check(monkeypatch):
+    monkeypatch.setattr(time_util_module.time, "time", lambda: 100.5)
+    service = TimeUtil()
+    service.set_timeoffset("0.25000")
+    service.last_bili_check = BiliTimeCheck(
+        offset_center=0.75,
+        delay=0.1,
+        date_header="Sun, 28 Jun 2026 09:43:08 GMT",
+        status_code=412,
+        source_url="https://show.bilibili.com/api/ticket/project/listV2",
+    )
+
+    assert service.countdown_now() == pytest.approx(99.75)
+    assert service.countdown_time_source() == "bili-date"
+
+
 def test_compute_ntp_sample_uses_low_delay_median():
     class Response:
         def __init__(self, offset, delay):
@@ -42,9 +58,7 @@ def test_compute_ntp_sample_uses_low_delay_median():
         def request(self, server, version, timeout):
             return self.responses[server]
 
-    service = TimeUtil(
-        ntp_servers=("slow.example", "fast-a.example", "fast-b.example")
-    )
+    service = TimeUtil(ntp_servers=("slow.example", "fast-a.example", "fast-b.example"))
     service.client = Client()
 
     sample = service.compute_ntp_sample(attempts_per_server=1)

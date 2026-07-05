@@ -94,6 +94,7 @@ def wait_until_start(time_start: str, warmup=None):
                 f"RTT {bili_check.delay * 1000:.1f}ms"
             )
         }
+        yield {"message": "倒计时默认使用会员购 Date 时间源。"}
 
     for fmt in (
         "%Y-%m-%dT%H:%M:%S",
@@ -113,7 +114,19 @@ def wait_until_start(time_start: str, warmup=None):
 
     yield {"message": f"计划抢票开始时间: {target_time.strftime('%Y-%m-%d %H:%M:%S')}"}
 
-    time_difference = target_time.timestamp() - time_service.now()
+    if hasattr(time_service, "countdown_now"):
+        countdown_now = time_service.countdown_now
+    else:
+        countdown_now = time_service.now
+    if hasattr(time_service, "countdown_time_source"):
+        countdown_source = time_service.countdown_time_source
+    else:
+
+        def countdown_source():
+            return getattr(time_service, "time_source", "unknown")
+
+    yield {"message": f"倒计时时间源: {countdown_source()}"}
+    time_difference = target_time.timestamp() - countdown_now()
     end_time = time.perf_counter() + time_difference
     next_report_at = float("inf")
     warmed = False

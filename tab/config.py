@@ -27,6 +27,12 @@ def go_settings_tab(header_ui):
     proxy_assignment_strategy_default = str(
         ConfigDB.get("proxyAssignmentStrategy") or "balanced"
     ).lower()
+    if proxy_assignment_strategy_default not in {
+        "balanced",
+        "queue",
+        "local_fanout",
+    }:
+        proxy_assignment_strategy_default = "balanced"
 
     def _split_proxy_lines(proxy_text: str | None) -> list[str]:
         if not proxy_text:
@@ -228,6 +234,10 @@ def go_settings_tab(header_ui):
     def update_proxy_assignment_strategy(value):
         ConfigDB.insert("proxyAssignmentStrategy", value)
         return gr.update(value=ConfigDB.get("proxyAssignmentStrategy"))
+
+    def update_proxy_include_direct(value):
+        ConfigDB.insert("proxyIncludeDirect", value)
+        return gr.update(value=ConfigDB.get_as_bool("proxyIncludeDirect", True))
 
     def update_log_level(value):
         ConfigDB.insert("logLevel", value)
@@ -462,6 +472,41 @@ def go_settings_tab(header_ui):
                         value=buy_defaults.notifier_config.notify_proxy_exhausted,
                         info="默认关闭。开启后，当所有代理都进入冷却且程序需要休息时，会通过已配置的推送渠道提醒你补充代理。",
                     )
+                    gr.Markdown("## 并发")
+                    gr.Markdown(
+                        """
+                        <div class="mt-2 text-sm leading-7 text-slate-700">
+                          <p><strong>均匀分配模式：</strong>程序会尽量把代理均匀分配给所有抢票任务。适合代理数量较多的情况。但是如果你配置的代理数目不够多，同一个代理在运行过程中可能会被多个程序使用。</p>
+                          <p><strong>队列模式：</strong>程序会将代理作为队列资源分配给抢票任务，尽量保证同一时间内每个正在运行的任务使用不同的代理。如果抢票任务数为 n，代理数量为 m：当 n &lt;= m 时，每个抢票任务都会分配到不同的代理；当 n &gt; m 时，最多同时运行 m 个抢票任务，未分配到代理的任务会进入等待队列，等前面的任务结束后再继续执行。这种模式适合希望同一时间内每个任务尽量使用不同 IP，并避免多个任务共用同一个代理的场景。</p>
+                          <p><strong>代理池并发：</strong>每个任务都会拿到完整代理池，并在关键 create 请求上通过多个代理同时尝试，谁先返回有效结果就优先使用。适合单个热门票档冲刺，但要求至少配置一个真实代理，不会使用直连。</p>
+                        </div>
+                        """
+                    )
+                    proxy_assignment_strategy_ui = gr.Dropdown(
+                        label="任务代理分配策略",
+                        choices=[
+                            ("均匀分配", "balanced"),
+                            ("队列模式", "queue"),
+                            ("代理池并发", "local_fanout"),
+                        ],
+                        value=proxy_assignment_strategy_default,
+                        interactive=True,
+                        allow_custom_value=False,
+                        filterable=False,
+                    )
+
+                    proxy_include_direct_ui = gr.Checkbox(
+                        label="允许使用直连（none）",
+                        value=ConfigDB.get_as_bool("proxyIncludeDirect", True),
+                        info="开启后，任务代理分配会把直连作为一个可用出口；关闭后，所有任务只使用已配置代理。",
+                    )
+                    queue_concurrency_limit_ui = gr.Number(
+                        label="队列并发上限（仅队列模式）",
+                        value=ConfigDB.get_as_int("queueConcurrencyLimit", 0),
+                        minimum=0,
+                        step=1,
+                        info="填 0 表示等于代理数量。",
+                    )
 
             with gr.Tab("音乐"):
                 with gr.Column(elem_classes="btb-card btb-layout-card"):
@@ -599,25 +644,6 @@ def go_settings_tab(header_ui):
                         label="抢票成功后自动打开支付链接",
                         value=buy_defaults.auto_open_payment_url,
                         info="默认关闭。开启后，成功获取支付链接时会尝试用系统默认浏览器打开。",
-                    )
-                    gr.Markdown("## 并发")
-                    proxy_assignment_strategy_ui = gr.Dropdown(
-                        label="任务代理分配策略",
-                        choices=[
-                            ("均匀分配", "balanced"),
-                            ("队列模式", "queue"),
-                        ],
-                        value=proxy_assignment_strategy_default,
-                        interactive=True,
-                        allow_custom_value=False,
-                        filterable=False,
-                    )
-                    queue_concurrency_limit_ui = gr.Number(
-                        label="队列并发上限（仅队列模式）",
-                        value=ConfigDB.get_as_int("queueConcurrencyLimit", 0),
-                        minimum=0,
-                        step=1,
-                        info="填 0 表示等于代理数量。",
                     )
                     gr.Markdown("## 日志")
                     log_level_ui = gr.Dropdown(
@@ -802,6 +828,11 @@ def go_settings_tab(header_ui):
         inputs=proxy_assignment_strategy_ui,
         outputs=proxy_assignment_strategy_ui,
     )
+    proxy_include_direct_ui.change(
+        fn=update_proxy_include_direct,
+        inputs=proxy_include_direct_ui,
+        outputs=proxy_include_direct_ui,
+    )
     _bind_number_commit(
         queue_concurrency_limit_ui,
         update_queue_concurrency_limit,
@@ -886,6 +917,7 @@ def go_settings_tab(header_ui):
             gr.update(
                 value=str(ConfigDB.get("proxyAssignmentStrategy") or "balanced").lower()
             ),
+            gr.update(value=ConfigDB.get_as_bool("proxyIncludeDirect", True)),
             gr.update(value=ConfigDB.get_as_int("queueConcurrencyLimit", 0)),
             gr.update(value=buy_defaults.log_level),
             gr.update(value=ConfigDB.get_as_bool("autoCleanupLogs", True)),
@@ -927,6 +959,7 @@ def go_settings_tab(header_ui):
         show_qrcode_ui,
         auto_open_payment_url_ui,
         proxy_assignment_strategy_ui,
+        proxy_include_direct_ui,
         queue_concurrency_limit_ui,
         log_level_ui,
         auto_cleanup_logs_ui,
