@@ -14,6 +14,7 @@ from util import LOG_DIR
 from util.Constant import _LOG_STREAM_ROUTE, _LOG_VIEW_ROUTE
 
 _LOG_CHUNK_ROUTE = f"{_LOG_VIEW_ROUTE}/chunk"
+MAX_INITIAL_LOG_BYTES = 512 * 1024
 
 
 def build_log_view_url(path: str) -> str:
@@ -46,9 +47,21 @@ def _resolve_log_path(raw_path: str | None = None, log_name: str | None = None) 
     return target
 
 
-def _read_log_text(path: Path) -> str:
-    with open(path, "r", encoding="utf-8", errors="replace") as handle:
-        return handle.read()
+def _read_log_text(path: Path, *, max_bytes: int | None = None) -> str:
+    with open(path, "rb") as handle:
+        if max_bytes is not None:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            if size > max_bytes:
+                handle.seek(size - max_bytes)
+                data = handle.read()
+                text = data.decode("utf-8", errors="replace")
+                return (
+                    f"[日志较大，已只显示末尾 {max_bytes // 1024}KB]\n"
+                    f"{text}"
+                )
+            handle.seek(0)
+        return handle.read().decode("utf-8", errors="replace")
 
 
 def _read_log_chunk_payload(

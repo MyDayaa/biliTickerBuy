@@ -1,6 +1,8 @@
 import secrets
 import time
+import urllib.parse
 from collections.abc import Callable
+import random
 from typing import cast
 
 import loguru
@@ -116,11 +118,7 @@ class BiliRequest:
     def replace_proxy_pool(self, proxy_string: str) -> None:
         self.proxy_manager.replace_proxy_list(proxy_string)
         if "proxy_pool" in self._h2_client_options:
-            self._h2_client_options["proxy_pool"] = [
-                proxy
-                for proxy in self.proxy_manager.proxy_list
-                if proxy.lower() != "none"
-            ]
+            self._h2_client_options["proxy_pool"] = list(self.proxy_manager.proxy_list)
         self.proxy_manager.apply_to_session(self.session)
         self._invalidate_h2_client()
 
@@ -204,7 +202,17 @@ class BiliRequest:
         except httpx.HTTPError:
             pass
 
-    def _h2_send(self, method: str, url, data=None, isJson=False):
+    @staticmethod
+    def _random_quote(path: str) -> str:
+        return "".join(random.choice([c, f"%{ord(c):02x}"]) for c in path)
+
+    def _h2_send(self, method: str, url: str, data=None, isJson=False):
+        parsed_url = urllib.parse.urlparse(url)
+
+        if "createV2" in parsed_url.path:
+            new_path = BiliRequest._random_quote(parsed_url.path)
+            url = urllib.parse.urlunparse(parsed_url._replace(path=new_path))
+
         if self._h2_client is None:
             self._h2_client = self._build_h2_client()
         client = self._h2_client
